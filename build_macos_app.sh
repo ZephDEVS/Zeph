@@ -30,6 +30,13 @@ fi
 echo "Building Zeph.app..."
 "$ROOT_DIR/.venv/bin/python" -m PyInstaller --noconfirm "$ROOT_DIR/Zeph.spec"
 
+echo "Pruning non-macOS speech assets to reduce app size..."
+rm -rf \
+  "$ROOT_DIR/dist/Zeph.app/Contents/Resources/speech_recognition/pocketsphinx-data" \
+  "$ROOT_DIR/dist/Zeph.app/Contents/Resources/speech_recognition/flac-linux-x86" \
+  "$ROOT_DIR/dist/Zeph.app/Contents/Resources/speech_recognition/flac-linux-x86_64" \
+  "$ROOT_DIR/dist/Zeph.app/Contents/Resources/speech_recognition/flac-win32.exe"
+
 echo
 echo "Build complete:"
 echo "  $ROOT_DIR/dist/Zeph.app"

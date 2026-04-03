@@ -22,6 +22,9 @@ if (existsSync(builtZip)) {
   });
   console.log(`Archived ${builtApp} -> ${targetZip}`);
 } else {
-  rmSync(targetZip, { force: true });
-  console.log("No local Zeph.app bundle found. Leaving download link to use configured external URL if provided.");
+  if (existsSync(targetZip)) {
+    console.log(`Keeping checked-in download asset at ${targetZip}`);
+  } else {
+    console.log("No local Zeph.app bundle found. Leaving download link to use configured external URL if provided.");
+  }
 }
