@@ -1,0 +1,17 @@
+Zeph Terms of Service
+Version 1.0
+
+By using Zeph, you agree to the following:
+
+1. Zeph is a local desktop automation assistant. You are responsible for every action you ask it to perform.
+2. Zeph may control your keyboard, mouse, browser, files, clipboard, and applications. Review commands carefully before running them.
+3. High-risk actions such as deleting files, killing processes, closing apps, or submitting forms may cause data loss or irreversible changes.
+4. You must only use Zeph on devices and accounts you are authorized to control.
+5. Zeph is provided as-is, without warranties of fitness, uptime, or accuracy.
+6. AI-generated plans, text, and automations may be wrong. You must supervise important tasks.
+7. Voice features, screenshots, OCR, and logs may process sensitive information visible on your machine.
+8. You are responsible for protecting any API keys, credentials, or private data entered into the app.
+9. Do not use Zeph to violate laws, contracts, platform rules, or the privacy and security of others.
+10. If you do not agree to these terms, do not use the application.
+
+Selecting "I Accept" stores your acceptance locally on this device for your local Zeph account.

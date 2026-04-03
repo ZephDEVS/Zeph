@@ -1,0 +1,17 @@
+.DS_Store
+.git-backup-*/
+.venv/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+
+build/
+dist/
+frontend/dist/
+frontend/node_modules/
+website/dist/
+website/node_modules/
+website/public/downloads/Zeph.app.zip
+
+*.log
+tmp/

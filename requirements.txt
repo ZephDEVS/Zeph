@@ -1,0 +1,16 @@
+anthropic==0.54.0
+openai==1.82.0
+Pillow==11.3.0
+playwright==1.53.0
+plyer==2.1.0
+psutil==7.0.0
+pyautogui==0.9.54
+pyperclip==1.9.0
+pywebview==6.1
+pytesseract==0.3.13
+pyttsx3==2.98
+pynput==1.7.7
+rich==14.0.0
+schedule==1.2.2
+SpeechRecognition==3.14.3
+watchdog==6.0.0
