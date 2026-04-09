@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import random
 import secrets
 import sys
 import threading
@@ -20,6 +21,7 @@ from daia.agent import ZephAgent
 from daia.config import AgentConfig
 from daia.memory import ConversationMessageRecord, ConversationRecord, UserRecord
 from daia.modules.scheduler import ScheduledTask
+from daia.modules.updater import AppUpdater, UpdateInfo
 
 
 def _runtime_root() -> Path:
@@ -69,6 +71,7 @@ class ZephWebApp:
         )
         self.memory = self.agent.memory
         self.logger = self.agent.logger
+        self.updater = AppUpdater()
         self.tos_text = (ASSETS_DIR / "tos.txt").read_text(encoding="utf-8")
         self.guide_text = (ASSETS_DIR / "user_guide.md").read_text(encoding="utf-8")
         self._lock = threading.RLock()
@@ -80,14 +83,27 @@ class ZephWebApp:
         self._busy = False
         self._busy_label = "Ready"
         self._active_conversation_id: int | None = None
+        self._update_info = UpdateInfo(
+            current_version=self.updater.current_version,
+            latest_version=self.updater.current_version,
+            available=False,
+            manifest_url=self.updater.manifest_url,
+            install_supported=self.updater.install_supported(),
+            message=f"Zeph {self.updater.current_version} is up to date.",
+        )
+        self.refresh_update_status(background=True)
 
     def _serialize_config(self) -> dict[str, Any]:
         config = self.agent.config
+        ai_status = self.agent.ai_status()
         return {
             "agentName": config.agent_name,
             "userName": config.user_name,
             "aiProvider": config.ai_provider,
             "aiModel": config.ai_model,
+            "resolvedAiProvider": ai_status["resolved_provider"],
+            "resolvedAiModel": ai_status["resolved_model"],
+            "aiStatusMessage": ai_status["message"],
             "browserMode": config.browser_mode,
             "preferredWpm": config.preferred_wpm,
             "wakeWord": config.wake_word,
@@ -96,6 +112,7 @@ class ZephWebApp:
             "speedMode": config.speed_mode,
             "speedMultiplier": config.speed_multiplier,
             "clipboardHistoryLimit": config.clipboard_history_limit,
+            "apiKey": config.api_key,
             "confirm": asdict(config.confirm),
         }
 
@@ -136,6 +153,10 @@ class ZephWebApp:
             "createdAt": getattr(schedule, "created_at", ""),
         }
 
+    @staticmethod
+    def _serialize_update(update: UpdateInfo) -> dict[str, Any]:
+        return update.to_dict()
+
     def _queue_event(self, event_type: str, payload: dict[str, Any]) -> None:
         with self._lock:
             event = {"id": self._next_event_id, "type": event_type, **payload}
@@ -163,10 +184,10 @@ class ZephWebApp:
 
     def _handle_agent_event(self, event_type: str, payload: dict[str, Any]) -> None:
         if event_type == "announce":
-            conversation_id = self._active_conversation_id
-            if conversation_id is not None:
-                message = self.memory.add_conversation_message(conversation_id, "agent", payload["text"])
-                self._queue_event("conversation_message", {"message": self._serialize_message(message)})
+            self._queue_event("status", {"busy": self._busy, "label": payload["text"]})
+            return
+        if event_type == "settings_changed":
+            self._queue_event("settings_refresh", {"config": self._serialize_config()})
             return
         if event_type == "plan":
             conversation_id = self._active_conversation_id
@@ -254,6 +275,7 @@ class ZephWebApp:
             "guide": self.guide_text,
             "tos": self.tos_text,
             "tosVersion": TOS_VERSION,
+            "update": self._serialize_update(self._update_info),
         }
 
     def create_session(self, user: UserRecord) -> dict[str, Any]:
@@ -267,7 +289,42 @@ class ZephWebApp:
             "user": self._serialize_user(user),
             "config": self._serialize_config(),
             "tosAccepted": self.memory.has_tos_acceptance(user.user_id, TOS_VERSION),
+            "update": self._serialize_update(self._update_info),
         }
+
+    def current_update_status(self) -> dict[str, Any]:
+        return self._serialize_update(self._update_info)
+
+    def refresh_update_status(self, background: bool = True) -> dict[str, Any]:
+        def worker() -> None:
+            try:
+                info = self.updater.check_for_update()
+            except Exception as exc:
+                info = UpdateInfo(
+                    current_version=self.updater.current_version,
+                    latest_version=self.updater.current_version,
+                    available=False,
+                    manifest_url=self.updater.manifest_url,
+                    install_supported=self.updater.install_supported(),
+                    message=f"Could not check for updates: {exc}",
+                )
+            self._update_info = info
+            self._queue_event("update_status", {"update": self._serialize_update(info)})
+
+        if background:
+            threading.Thread(target=worker, daemon=True).start()
+            return self.current_update_status()
+        worker()
+        return self.current_update_status()
+
+    def install_update(self) -> dict[str, Any]:
+        if not self._update_info.available:
+            self.refresh_update_status(background=False)
+        if not self._update_info.available:
+            return {"ok": False, "message": "Zeph is already up to date."}
+        result = self.updater.install_update(self._update_info)
+        self._queue_event("update_install", result)
+        return result
 
     def get_session(self, token: str | None) -> SessionRecord:
         if not token:
@@ -329,7 +386,18 @@ class ZephWebApp:
 
     def create_conversation(self, session: SessionRecord) -> dict[str, Any]:
         conversation = self.memory.create_conversation(session.user.user_id, "New chat")
-        opener = self.memory.add_conversation_message(conversation.conversation_id, "agent", "What can I help you with today?")
+        opener = self.memory.add_conversation_message(
+            conversation.conversation_id,
+            "agent",
+            random.choice(
+                [
+                    "What can I help you with today?",
+                    "What are we working on?",
+                    "Tell me what you want to do.",
+                    "I'm ready. What do you need?",
+                ]
+            ),
+        )
         return {
             "conversation": self._serialize_conversation(conversation),
             "messages": [self._serialize_message(opener)],
@@ -385,7 +453,7 @@ class ZephWebApp:
     def _run_command_worker(self, conversation_id: int, command: str) -> None:
         self._active_conversation_id = conversation_id
         try:
-            result = self.agent.execute(command)
+            result = self.agent.execute(command, conversation_id=conversation_id)
             message = self.memory.add_conversation_message(conversation_id, "agent", result)
             self._queue_event("conversation_message", {"message": self._serialize_message(message)})
         except Exception as exc:
@@ -540,6 +608,7 @@ class ZephRequestHandler(BaseHTTPRequestHandler):
                         "user": self.app._serialize_user(session.user),
                         "config": self.app.settings_payload(),
                         "tosAccepted": self.app.memory.has_tos_acceptance(session.user.user_id, TOS_VERSION),
+                        "update": self.app.current_update_status(),
                     }
                 )
                 return
@@ -568,6 +637,10 @@ class ZephRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/settings":
                 self._require_session()
                 self._send_json({"config": self.app.settings_payload()})
+                return
+            if parsed.path == "/api/update":
+                self._require_session()
+                self._send_json({"update": self.app.current_update_status()})
                 return
             self._send_error_json(HTTPStatus.NOT_FOUND, "Not found.")
         except PermissionError as exc:
@@ -638,6 +711,14 @@ class ZephRequestHandler(BaseHTTPRequestHandler):
                 action = parsed.path.split("/")[4]
                 self.app.mutate_schedule(task_id, action)
                 self._send_json({"ok": True})
+                return
+            if parsed.path == "/api/update/check":
+                self._require_session()
+                self._send_json({"update": self.app.refresh_update_status(background=False)})
+                return
+            if parsed.path == "/api/update/install":
+                self._require_session()
+                self._send_json(self.app.install_update())
                 return
             self._send_error_json(HTTPStatus.NOT_FOUND, "Not found.")
         except PermissionError as exc:

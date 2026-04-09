@@ -11,6 +11,10 @@ const features = [
     title: "Local by default",
     copy: "Your app, your files, your schedules, your memory. Zeph runs on your machine and keeps the operational context close.",
   },
+  {
+    title: "Updates built in",
+    copy: "Zeph can check this site for the latest macOS release and install updates for packaged app builds.",
+  },
 ];
 
 const steps = [
@@ -63,7 +67,7 @@ function App() {
               </a>
             </div>
             <p className="microcopy">
-              For Apple Silicon and Intel Macs running modern macOS.
+              For Apple Silicon and Intel Macs running modern macOS, with in-app update checks for newer releases.
             </p>
           </div>
 

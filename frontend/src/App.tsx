@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import type { ActivityTask, Config, Conversation, EventEnvelope, Message, PromptRequest, Schedule, User } from "./types";
+import type { ActivityTask, Config, Conversation, EventEnvelope, Message, PromptRequest, Schedule, UpdateInfo, User } from "./types";
 
 type WorkspaceTab = "activity" | "automations" | "guide" | "terms" | "settings";
 type AuthMode = "login" | "signup";
@@ -14,7 +14,7 @@ const relativeTime = (value: string) => {
 };
 
 function App() {
-  const [boot, setBoot] = useState<{ appName: string; guide: string; tos: string; tosVersion: string } | null>(null);
+  const [boot, setBoot] = useState<{ appName: string; guide: string; tos: string; tosVersion: string; update: UpdateInfo } | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [token, setToken] = useState<string | null>(() => window.localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState<User | null>(null);
@@ -32,6 +32,7 @@ function App() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [activity, setActivity] = useState<ActivityTask[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [scheduleDraft, setScheduleDraft] = useState("");
   const [pendingPrompt, setPendingPrompt] = useState<PromptRequest | null>(null);
@@ -59,7 +60,10 @@ function App() {
   );
 
   useEffect(() => {
-    api.bootstrap().then(setBoot).catch((err: Error) => setError(err.message));
+    api.bootstrap().then((payload) => {
+      setBoot(payload);
+      setUpdateInfo(payload.update);
+    }).catch((err: Error) => setError(err.message));
   }, []);
 
   useEffect(() => {
@@ -70,6 +74,7 @@ function App() {
         setConfig(payload.config);
         setSettingsDraft(payload.config);
         setTosAccepted(payload.tosAccepted);
+        setUpdateInfo(payload.update);
         await loadWorkspace(token);
         await loadConversations(token);
       })
@@ -133,6 +138,13 @@ function App() {
         setSettingsDraft(event.config);
         return;
       }
+      if (event.type === "update_status") {
+        setUpdateInfo(event.update);
+        return;
+      }
+      if (event.type === "update_install") {
+        setError(event.message);
+      }
       if (event.type === "schedule_refresh" && token) {
         loadSchedules(token);
       }
@@ -174,7 +186,7 @@ function App() {
     setSchedules(payload.schedules);
   };
 
-  const beginSession = async (promise: Promise<{ token: string; user: User; config: Config; tosAccepted: boolean }>) => {
+  const beginSession = async (promise: Promise<{ token: string; user: User; config: Config; tosAccepted: boolean; update: UpdateInfo }>) => {
     setError(null);
     const payload = await promise;
     cursorRef.current = 0;
@@ -184,6 +196,7 @@ function App() {
     setConfig(payload.config);
     setSettingsDraft(payload.config);
     setTosAccepted(payload.tosAccepted);
+    setUpdateInfo(payload.update);
   };
 
   const handleLogin = async () => {
@@ -287,6 +300,26 @@ function App() {
     }
   };
 
+  const checkForUpdates = async () => {
+    if (!token) return;
+    try {
+      const payload = await api.checkUpdate(token);
+      setUpdateInfo(payload.update);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const installLatestUpdate = async () => {
+    if (!token) return;
+    try {
+      const payload = await api.installUpdate(token);
+      setError(payload.message);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
   const submitPromptDecision = async (approved: boolean) => {
     if (!token || !pendingPrompt) return;
     await api.respondPrompt(token, pendingPrompt.id, approved);
@@ -384,6 +417,7 @@ function App() {
                 API key
                 <input value={signupForm.apiKey} onChange={(event) => setSignupForm({ ...signupForm, apiKey: event.target.value })} />
               </label>
+              <p className="microcopy full-width">Leave the API key blank if Ollama is already running locally. Zeph will try that first.</p>
               <label className="checkbox-row full-width">
                 <input
                   type="checkbox"
@@ -434,10 +468,12 @@ function App() {
           <div>
             <div className="eyebrow">Conversation</div>
             <h2>{activeConversation?.title ?? "New chat"}</h2>
-            <p>{config.aiModel} ready for chat and desktop actions</p>
+            <p>{config.aiStatusMessage ?? `${config.aiModel} ready for chat and desktop actions`}</p>
+            {updateInfo?.available && <p className="update-line">Update available: {updateInfo.latest_version}</p>}
           </div>
           <div className="topbar-actions">
             <span className={`status-pill ${busy ? "busy" : ""}`}>{busyLabel}</span>
+            {updateInfo?.available && <button className="ghost" onClick={() => void installLatestUpdate()}>Update</button>}
             <button className="ghost" onClick={() => { setWorkspaceTab("activity"); setWorkspaceOpen(true); }}>Workspace</button>
             <div className="account-menu-shell">
               <button className="ghost" onClick={() => setAccountMenuOpen((current) => !current)}>{user.displayName}</button>
@@ -560,9 +596,25 @@ function App() {
                     <input value={String(settingsDraft.userName ?? "")} onChange={(event) => setSettingsDraft({ ...settingsDraft, userName: event.target.value })} />
                   </label>
                   <label>
+                    AI provider
+                    <select value={String(settingsDraft.aiProvider ?? "auto")} onChange={(event) => setSettingsDraft({ ...settingsDraft, aiProvider: event.target.value })}>
+                      <option value="auto">auto</option>
+                      <option value="ollama">ollama</option>
+                      <option value="anthropic">anthropic</option>
+                      <option value="openai">openai</option>
+                    </select>
+                  </label>
+                  <label>
                     Model
                     <input value={String(settingsDraft.aiModel ?? "")} onChange={(event) => setSettingsDraft({ ...settingsDraft, aiModel: event.target.value })} />
                   </label>
+                  <label className="full-width">
+                    API key
+                    <input value={String(settingsDraft.apiKey ?? "")} onChange={(event) => setSettingsDraft({ ...settingsDraft, apiKey: event.target.value })} />
+                  </label>
+                  <p className="microcopy full-width">
+                    Active AI: {config.resolvedAiProvider ? `${config.resolvedAiProvider} / ${config.resolvedAiModel ?? "default model"}` : "fallback only"}
+                  </p>
                   <label>
                     Browser mode
                     <select value={String(settingsDraft.browserMode ?? "default")} onChange={(event) => setSettingsDraft({ ...settingsDraft, browserMode: event.target.value })}>
@@ -587,6 +639,18 @@ function App() {
                       <option value="stealth">stealth</option>
                     </select>
                   </label>
+                  <div className="panel-note full-width">
+                    <strong>App updates</strong>
+                    <span>{updateInfo?.message ?? "No update check yet."}</span>
+                    <div className="inline-actions">
+                      <button className="ghost" onClick={() => void checkForUpdates()}>Check now</button>
+                      {updateInfo?.available && (
+                        <button className="primary" onClick={() => void installLatestUpdate()}>
+                          Install {updateInfo.latest_version}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <button className="primary full-width" onClick={() => void saveSettings()}>Save settings</button>
                 </div>
               )}

@@ -1,4 +1,4 @@
-import type { ActivityTask, Config, Conversation, EventEnvelope, Message, Schedule, User } from "./types";
+import type { ActivityTask, Config, Conversation, EventEnvelope, Message, Schedule, UpdateInfo, User } from "./types";
 
 const authHeaders = (token?: string): HeadersInit =>
   token ? { Authorization: `Bearer ${token}` } : {};
@@ -20,20 +20,20 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
 }
 
 export const api = {
-  bootstrap: () => request<{ appName: string; guide: string; tos: string; tosVersion: string }>("/api/bootstrap"),
+  bootstrap: () => request<{ appName: string; guide: string; tos: string; tosVersion: string; update: UpdateInfo }>("/api/bootstrap"),
   signup: (payload: Record<string, unknown>) =>
-    request<{ token: string; user: User; config: Config; tosAccepted: boolean }>("/api/auth/signup", {
+    request<{ token: string; user: User; config: Config; tosAccepted: boolean; update: UpdateInfo }>("/api/auth/signup", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   login: (payload: Record<string, unknown>) =>
-    request<{ token: string; user: User; config: Config; tosAccepted: boolean }>("/api/auth/login", {
+    request<{ token: string; user: User; config: Config; tosAccepted: boolean; update: UpdateInfo }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   logout: (token: string) => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }, token),
   me: (token: string) =>
-    request<{ user: User; config: Config; tosAccepted: boolean }>("/api/me", { method: "GET" }, token),
+    request<{ user: User; config: Config; tosAccepted: boolean; update: UpdateInfo }>("/api/me", { method: "GET" }, token),
   acceptTos: (token: string) => request<{ ok: boolean }>("/api/auth/accept-tos", { method: "POST" }, token),
   conversations: (token: string) =>
     request<{ conversations: Conversation[] }>("/api/conversations", { method: "GET" }, token),
@@ -66,4 +66,7 @@ export const api = {
   settings: (token: string) => request<{ config: Config }>("/api/settings", { method: "GET" }, token),
   updateSettings: (token: string, payload: Partial<Config>) =>
     request<{ config: Config }>("/api/settings", { method: "PUT", body: JSON.stringify(payload) }, token),
+  updateStatus: (token: string) => request<{ update: UpdateInfo }>("/api/update", { method: "GET" }, token),
+  checkUpdate: (token: string) => request<{ update: UpdateInfo }>("/api/update/check", { method: "POST" }, token),
+  installUpdate: (token: string) => request<{ ok: boolean; mode?: string; message: string; downloadedPath?: string }>("/api/update/install", { method: "POST" }, token),
 };

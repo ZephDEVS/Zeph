@@ -189,6 +189,19 @@ button {
   grid-column: 1 / -1;
 }
 
+.microcopy {
+  margin: -0.3rem 0 0;
+  color: #8f9aa5;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.update-line {
+  margin: 0.45rem 0 0;
+  color: #b5d9aa;
+  font-size: 0.92rem;
+}
+
 input,
 textarea,
 select {
@@ -520,6 +533,16 @@ select:focus {
 
 .panel-block h4 {
   margin: 0;
+}
+
+.panel-note {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #cbd4dc;
 }
 
 .list-card,

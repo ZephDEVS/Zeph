@@ -33,8 +33,8 @@ class AgentConfig:
 
     agent_name: str = "Zeph"
     user_name: str = ""
-    ai_provider: str = "anthropic"
-    ai_model: str = "claude-sonnet-4-20250514"
+    ai_provider: str = "auto"
+    ai_model: str = "llama3.2:3b"
     browser_mode: str = "default"
     api_key: str = ""
     preferred_wpm: int = 80

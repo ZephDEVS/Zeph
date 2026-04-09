@@ -10,6 +10,9 @@ export type Config = {
   userName: string;
   aiProvider: string;
   aiModel: string;
+  resolvedAiProvider?: string | null;
+  resolvedAiModel?: string | null;
+  aiStatusMessage?: string;
   browserMode: string;
   preferredWpm: number;
   wakeWord: string;
@@ -18,6 +21,7 @@ export type Config = {
   speedMode: string;
   speedMultiplier: number;
   clipboardHistoryLimit: number;
+  apiKey?: string;
   confirm: Record<string, boolean>;
 };
 
@@ -58,10 +62,27 @@ export type ActivityTask = {
   createdAt: string;
 };
 
+export type UpdateInfo = {
+  current_version: string;
+  latest_version: string;
+  available: boolean;
+  manifest_url: string;
+  download_url: string;
+  notes_url: string;
+  title: string;
+  summary: string;
+  checked_at: number;
+  install_supported: boolean;
+  downloaded_path: string;
+  message: string;
+};
+
 export type EventEnvelope =
   | { id: number; type: "status"; busy: boolean; label: string }
   | { id: number; type: "conversation_message"; message: Message }
   | { id: number; type: "pending_prompt"; prompt: PromptRequest }
   | { id: number; type: "conversation_refresh"; conversationId: number }
   | { id: number; type: "settings_refresh"; config: Config }
-  | { id: number; type: "schedule_refresh" };
+  | { id: number; type: "schedule_refresh" }
+  | { id: number; type: "update_status"; update: UpdateInfo }
+  | { id: number; type: "update_install"; ok: boolean; mode?: string; message: string; downloadedPath?: string };

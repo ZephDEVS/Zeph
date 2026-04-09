@@ -4,10 +4,12 @@ from pathlib import Path
 
 
 project_root = Path(SPECPATH)
+app_version = (project_root / "VERSION").read_text(encoding="utf-8").strip()
 
 datas = [
     (str(project_root / "frontend" / "dist"), "frontend/dist"),
     (str(project_root / "daia" / "assets"), "daia/assets"),
+    (str(project_root / "VERSION"), "."),
 ]
 
 hiddenimports = [
@@ -69,8 +71,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleName": "Zeph",
         "CFBundleDisplayName": "Zeph",
-        "CFBundleShortVersionString": "1.0.0",
-        "CFBundleVersion": "1.0.0",
+        "CFBundleShortVersionString": app_version,
+        "CFBundleVersion": app_version,
         "NSMicrophoneUsageDescription": "Zeph uses the microphone for voice commands.",
         "NSSpeechRecognitionUsageDescription": "Zeph uses speech recognition for voice commands.",
     },
