@@ -1,8 +1,8 @@
 {
-  "version": "1.1.1",
-  "title": "Zeph 1.1.1",
+  "version": "1.1.2",
+  "title": "Zeph 1.1.2",
   "summary": "Latest Zeph desktop release for macOS.",
   "download_url": "https://zeph-lake.vercel.app/downloads/Zeph.app.zip",
   "notes_url": "https://zeph-lake.vercel.app/downloads/INSTALL.txt",
-  "published_at": "2026-04-09T20:01:44.524Z"
+  "published_at": "2026-04-10T12:13:14.175Z"
 }

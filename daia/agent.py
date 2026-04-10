@@ -685,6 +685,8 @@ class ZephAgent:
             "If the user is frustrated, be steady and practical."
         )
         ai_text = self._ai_text(prompt=command, conversation_id=conversation_id, system_prompt=prompt, max_tokens=900)
+        if not ai_text:
+            ai_text = self._ai_text(prompt=command, conversation_id=conversation_id, max_tokens=500)
         if ai_text:
             return ai_text
         return self._fallback_chat_response(simple, command)
@@ -827,14 +829,40 @@ class ZephAgent:
 
     def _type_text(self, text: str) -> str:
         self.typing.set_profile(self._typing_profile())
-        stats = self.typing.type_text(text)
+        try:
+            stats = self.typing.type_text(text)
+            mode = "typed"
+        except Exception as exc:
+            self.logger.log("SYSTEM", f"Typing simulation failed, falling back to clipboard paste: {exc}")
+            stats = self._paste_text_via_clipboard(text)
+            mode = "pasted"
         try:
             focused = self.windows.focused_window()
             self.memory.set_behavior(focused, "preferred_wpm", self.config.preferred_wpm)
         except Exception:
             pass
-        self.logger.log("SYSTEM", f"Typed {stats['typed_chars']} characters.")
-        return f"Typed {stats['typed_chars']} characters in {stats['elapsed']} seconds."
+        self.logger.log("SYSTEM", f"{mode.capitalize()} {stats['typed_chars']} characters.")
+        if mode == "typed":
+            return f"Typed {stats['typed_chars']} characters in {stats['elapsed']} seconds."
+        return f"Typing permissions were unreliable, so I pasted {stats['typed_chars']} characters instead."
+
+    def _paste_text_via_clipboard(self, text: str) -> dict[str, int | float]:
+        """Paste text through the clipboard as a fallback when keystrokes fail."""
+
+        previous_clipboard = ""
+        try:
+            previous_clipboard = self.clipboard.read()
+        except Exception:
+            previous_clipboard = ""
+        self.clipboard.write(text)
+        time.sleep(0.08)
+        self._send_hotkey([self._primary_modifier(), "v"])
+        time.sleep(0.08)
+        try:
+            self.clipboard.write(previous_clipboard)
+        except Exception:
+            pass
+        return {"typed_chars": len(text), "corrections": 0, "elapsed": 0.16}
 
     def _capture_only(self) -> str:
         timestamp = int(time.time())
@@ -1071,7 +1099,8 @@ class ZephAgent:
         }
         try:
             data = self._json_request(f"{self._ollama_base_url()}/api/chat", payload=payload, timeout=180.0)
-        except (urllib_error.URLError, TimeoutError, ValueError, OSError):
+        except (urllib_error.URLError, TimeoutError, ValueError, OSError) as exc:
+            self.logger.log("AI", f"Ollama chat failed for model {model}: {exc}")
             return None
         message = data.get("message", {})
         return str(message.get("content", "")).strip() or None
@@ -1091,7 +1120,8 @@ class ZephAgent:
                 messages=[{"role": "user", "content": prompt}],
             )
             return "".join(block.text for block in response.content if getattr(block, "type", "") == "text").strip() or None
-        except Exception:
+        except Exception as exc:
+            self.logger.log("AI", f"Anthropic chat failed for model {model}: {exc}")
             return None
 
     def _openai_text(self, *, model: str, prompt: str, system_prompt: str | None, max_tokens: int) -> str | None:
@@ -1105,7 +1135,8 @@ class ZephAgent:
             user_input = prompt if not system_prompt else f"{system_prompt}\n\n{prompt}"
             response = client.responses.create(model=model, input=user_input, max_output_tokens=max_tokens)
             return response.output_text.strip() or None
-        except Exception:
+        except Exception as exc:
+            self.logger.log("AI", f"OpenAI chat failed for model {model}: {exc}")
             return None
 
     def _ai_text(
@@ -1118,6 +1149,7 @@ class ZephAgent:
     ) -> str | None:
         provider, model, available = self._resolve_ai_backend()
         if not available or not provider or not model:
+            self.logger.log("AI", "No AI backend available for this reply; using fallback response.")
             return None
         enriched_prompt = self._prompt_with_history(prompt, conversation_id)
         if provider == "ollama":
