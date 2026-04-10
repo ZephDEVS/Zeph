@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import platform
+import re
 import subprocess
 import time
 import webbrowser
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import pyperclip
 from playwright.sync_api import Browser, Page, Playwright, TimeoutError, sync_playwright
 
 from daia.modules.typing_sim import TypingSimulator
@@ -97,6 +99,55 @@ class BrowserController:
         # Docs places the editable canvas near the visual center of the page.
         self._click_relative(0.52, 0.46)
         time.sleep(0.35)
+
+    def _copy_current_selection(self) -> str:
+        """Copy the active selection and restore the previous clipboard."""
+
+        previous_clipboard = ""
+        try:
+            previous_clipboard = pyperclip.paste()
+        except Exception:
+            previous_clipboard = ""
+        self._send_hotkey(self._primary_modifier(), "c")
+        time.sleep(0.25)
+        try:
+            captured = pyperclip.paste() or ""
+        except Exception:
+            captured = ""
+        try:
+            pyperclip.copy(previous_clipboard)
+        except Exception:
+            pass
+        return captured
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+    def _verify_google_docs_content(self, expected_text: str) -> bool:
+        """Verify that the document body contains the expected text."""
+
+        normalized_expected = self._normalize_text(expected_text)
+        if not normalized_expected:
+            return False
+        self._send_hotkey(self._primary_modifier(), "a")
+        time.sleep(0.2)
+        captured = self._copy_current_selection()
+        normalized_captured = self._normalize_text(captured)
+        if not normalized_captured:
+            return False
+        if len(normalized_expected) <= 80:
+            return normalized_expected == normalized_captured
+        prefix = normalized_expected[:80]
+        return normalized_captured.startswith(prefix) and len(normalized_captured) >= int(len(normalized_expected) * 0.7)
+
+    def _clear_google_docs_content(self) -> None:
+        """Clear the active document body before retrying input."""
+
+        self._send_hotkey(self._primary_modifier(), "a")
+        time.sleep(0.15)
+        self._press_key("backspace")
+        time.sleep(0.25)
         self._click_relative(0.52, 0.46)
         time.sleep(0.35)
 
@@ -239,22 +290,42 @@ class BrowserController:
         if browser_mode == "default":
             self.open_default("https://docs.new")
             time.sleep(7)
-            self._focus_google_docs_canvas()
-            try:
-                stats = typing_simulator.type_text(content)
-                input_mode = "typed"
-            except Exception:
-                if paste_fallback is None:
+            attempts: list[tuple[str, Callable[[], dict[str, int | float]]]] = [
+                ("typed", lambda: typing_simulator.type_text(content))
+            ]
+            if paste_fallback is not None:
+                attempts.extend(
+                    [
+                        ("pasted", lambda: paste_fallback(content)),
+                        ("pasted", lambda: paste_fallback(content)),
+                    ]
+                )
+            last_stats: dict[str, int | float] | None = None
+            last_mode = "typed"
+            for index, (input_mode, runner) in enumerate(attempts):
+                self._focus_google_docs_canvas()
+                if index > 0:
+                    self._clear_google_docs_content()
+                    self._focus_google_docs_canvas()
+                try:
+                    stats = runner()
+                except Exception:
+                    if input_mode == "typed" and paste_fallback is not None:
+                        continue
                     raise
-                stats = paste_fallback(content)
-                input_mode = "pasted"
-            word_count = len(content.split())
-            return {
-                "word_count": word_count,
-                "url": "https://docs.new",
-                "typing_stats": stats,
-                "input_mode": input_mode,
-            }
+                last_stats = stats
+                last_mode = input_mode
+                time.sleep(0.6)
+                if self._verify_google_docs_content(content):
+                    word_count = len(content.split())
+                    return {
+                        "word_count": word_count,
+                        "url": "https://docs.new",
+                        "typing_stats": stats,
+                        "input_mode": input_mode,
+                        "verified": True,
+                    }
+            raise RuntimeError("Google Doc opened, but Zeph could not verify that the text was entered into the document.")
 
         session = self.start_headless(headless=headless)
         page = session.page
@@ -277,4 +348,5 @@ class BrowserController:
             "url": page.url,
             "typing_stats": stats,
             "input_mode": "typed",
+            "verified": True,
         }

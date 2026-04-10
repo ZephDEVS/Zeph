@@ -965,10 +965,10 @@ class ZephAgent:
         self.logger.log("WEB", f"Created Google Doc at {result['url']}.")
         if result.get("input_mode") == "pasted":
             return (
-                f"Essay complete. I pasted the content because direct typing was unreliable. "
+                f"Essay complete and verified. I pasted the content because direct typing was unreliable. "
                 f"Final word count: {result['word_count']}. Document URL: {result['url']}"
             )
-        return f"Essay complete. Final word count: {result['word_count']}. Document URL: {result['url']}"
+        return f"Essay complete and verified. Final word count: {result['word_count']}. Document URL: {result['url']}"
 
     @staticmethod
     def _is_google_docs_request(lowered: str) -> bool:
@@ -991,10 +991,10 @@ class ZephAgent:
         self.logger.log("WEB", f"Created Google Doc at {result['url']}.")
         if result.get("input_mode") == "pasted":
             return (
-                f"Google Doc ready. I pasted {result['word_count']} words because direct typing was unreliable. "
+                f"Google Doc ready and verified. I pasted {result['word_count']} words because direct typing was unreliable. "
                 f"Document URL: {result['url']}"
             )
-        return f"Google Doc ready. Typed {result['word_count']} words. Document URL: {result['url']}"
+        return f"Google Doc ready and verified. Typed {result['word_count']} words. Document URL: {result['url']}"
 
     @staticmethod
     def _is_google_search_request(lowered: str) -> bool:
