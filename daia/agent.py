@@ -471,6 +471,12 @@ class ZephAgent:
             "open windows",
             "focus window ",
             "type ",
+            "go to google",
+            "open google",
+            "search google",
+            "google search",
+            "on google",
+            "in google",
             "take a screenshot",
             "what you see",
             "delete all",
@@ -727,6 +733,8 @@ class ZephAgent:
             if lowered.startswith("focus window "):
                 title = command[len("focus window ") :].strip()
                 return self._do_or_simulate(context, f"focus the '{title}' window", lambda: self._focus_window(title))
+            if self._is_google_search_request(lowered):
+                return self._handle_google_search_request(command, context)
             if lowered.startswith("type "):
                 text = command[5:].strip().strip("'\"")
                 return self._do_or_simulate(context, "type text", lambda: self._type_text(text))
@@ -950,10 +958,16 @@ class ZephAgent:
         result = self.browser.google_docs_create_and_type(
             essay,
             self.typing,
+            paste_fallback=self._paste_text_via_clipboard,
             headless=False,
             browser_mode=self.config.browser_mode,
         )
         self.logger.log("WEB", f"Created Google Doc at {result['url']}.")
+        if result.get("input_mode") == "pasted":
+            return (
+                f"Essay complete. I pasted the content because direct typing was unreliable. "
+                f"Final word count: {result['word_count']}. Document URL: {result['url']}"
+            )
         return f"Essay complete. Final word count: {result['word_count']}. Document URL: {result['url']}"
 
     @staticmethod
@@ -970,11 +984,73 @@ class ZephAgent:
         result = self.browser.google_docs_create_and_type(
             content,
             self.typing,
+            paste_fallback=self._paste_text_via_clipboard,
             headless=False,
             browser_mode=self.config.browser_mode,
         )
         self.logger.log("WEB", f"Created Google Doc at {result['url']}.")
+        if result.get("input_mode") == "pasted":
+            return (
+                f"Google Doc ready. I pasted {result['word_count']} words because direct typing was unreliable. "
+                f"Document URL: {result['url']}"
+            )
         return f"Google Doc ready. Typed {result['word_count']} words. Document URL: {result['url']}"
+
+    @staticmethod
+    def _is_google_search_request(lowered: str) -> bool:
+        if "google doc" in lowered or "google docs" in lowered or "docs.new" in lowered:
+            return False
+        patterns = (
+            "go to google",
+            "open google",
+            "google and type",
+            "google and search",
+            "search google",
+            "google search",
+            " on google",
+            " in google",
+        )
+        return any(pattern in lowered for pattern in patterns)
+
+    def _handle_google_search_request(self, command: str, context: ExecutionContext) -> str:
+        query = self._extract_google_search_query(command)
+        if context.dry_run:
+            if query:
+                return f"Dry run: I would open Google and search for: {query}"
+            return "Dry run: I would open Google in the default browser."
+        self.notifier.notify("Zeph", "Opening Google.", timeout=3)
+        if not query:
+            self.browser.open_default("https://www.google.com")
+            return "Opened Google in the default browser."
+        result = self.browser.google_search(
+            query,
+            self.typing,
+            paste_fallback=self._paste_text_via_clipboard,
+            headless=False,
+            browser_mode=self.config.browser_mode,
+        )
+        self.logger.log("WEB", f"Opened Google and submitted query: {query}")
+        chars = int(result["typing_stats"]["typed_chars"])
+        if result["input_mode"] == "typed":
+            return f"Opened Google and typed {chars} characters for the search: {query}"
+        return f"Opened Google and pasted the search because direct typing was unreliable: {query}"
+
+    def _extract_google_search_query(self, command: str) -> str:
+        quoted = re.search(r"""['"]([^'"]+)['"]""", command)
+        if quoted:
+            return quoted.group(1).strip()
+
+        patterns = (
+            r"\b(?:open|go to|goto|launch)\s+google(?:\.com)?\s+(?:and\s+)?(?:type|search(?:\s+for)?)\s+(.+)$",
+            r"\bsearch\s+google\s+(?:for\s+)?(.+)$",
+            r"\bgoogle\s+search\s+(?:for\s+)?(.+)$",
+            r"\b(?:type|search(?:\s+for)?)\s+(.+?)\s+(?:on|in)\s+google(?:\.com)?$",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, command, flags=re.IGNORECASE)
+            if match:
+                return match.group(1).strip().rstrip(".")
+        return ""
 
     def _extract_google_docs_content(self, command: str) -> str:
         lowered = command.lower()
